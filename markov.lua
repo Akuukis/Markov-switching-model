@@ -1,9 +1,43 @@
+--[[
+
+Fits markov switching model to a set of timeseries data.
+
+1. Markov switching model
+1.1. x states (tested with x=2)
+1.2. x assets (tested with x=3)
+1.3. simple autoregression lag x (tested with x=1)
+1.4. Calculating 4+1 moments by Timmermann
+2. Ordinary least squares (OLS), tried but not used.
+3. Relative least square (RLS), used with customized koefficients.
+4. Descriptive statistics
+4.1. Loads data from csv (In excel use *save as...* and choose csv instead of xlsx. See example for format
+5. Monte carlo (a.k.a. search by random) fitting
+5.1. Improves x samples for y times every cycle for infinite iterations.
+5.2. Custom and dynamic constraints for every variable. Can automaticaly narrow search space by q
+5.3. Can load custom starting point from csv, see example for format (its copy/paste from output format).
+
+All output is in csv. 
+
+Built upon:
+1. Timmermann, A. (1999), Moments of Markov Switching Models. FMG Discussion Papers, 
+	Financial Markets Group. Retrieved January 15, 2015 from EconPapers website: 
+	http://EconPapers.repec.org/RePEc:fmg:fmgdps:dp323.
+
+2. Aigner, P., Beyschlag, G., Friederich, T., Kalepky, M., & Zagst, R. (2012). Modeling and 
+	managing portfolios including listed private equity. Computers & Operations Research, 39(4), 
+	753-764. http://dx.doi.org/10.1016/j.cor.2010.12.015 
+	
+Lua 5.3
+
+-]]
 print(os.time() - os.clock() * 1000)
 math.randomseed(os.time() - os.clock() * 1000)
 print(os.date())
 print()
+
+-- Includes
 local matrix = require 'matrix'
-qs = function(A, i, k)
+local qs = function(A, i, k)
 	-- qs(Array, 1, #Array)
 	local function ChooseMedian(a,b,c)
 		if a<=b and a<=c then return math.min(b,c) end
@@ -33,8 +67,7 @@ end
 
 local timer = os.clock()-os.clock()
 local counter = 0
-local pauser = 0
--- Matrix notation
+----- data matrix notation
 -- For scalars -> row = state, column = asset.
 -- For VCV -> table = state, subtable = VCV for assets.
 local example_stats = {
@@ -634,7 +667,7 @@ function rls:do_mean(estimate, switch)
 	local sum = 0
 	for i=1,self.assets do
 --		sum = sum + (1-estimate[1][i]/self.stats.mean[1][i])^2
-		sum = sum + ((self.stats.mean[1][i]-estimate[1][i])*100000)^2
+		sum = sum + ((self.stats.mean[1][i]-estimate[1][i])*100000*(3))^2
 	end
 	sum = switch and sum/self.assets or sum -- weighted between moments if true
 	self.total = self.total -self.subtotal.mean + sum
@@ -1055,11 +1088,11 @@ function mc(delta, margin, size, reps, lowest)
 				local markovguess = markov:around(hof[h],margin,cns) -- 4.45%
 				markovguess:do_umean() -- 12.00%
 				if check:do_mean(markovguess.u.mean, true) < perch then
-				counter = os.clock()
+-- --[[START TIMER--]] counter = os.clock()
 					counts[1] = counts[1] + 1 -- 0.001% x GetIn
 					markovguess:do_uvcv() -- 55% !!!!!!!!!!!!!
 					check:do_stdev(markovguess.u.stdev)
-				timer = timer + (os.clock()-counter)
+-- --[[ END TIMER --]] timer = timer + (os.clock()-counter)
 					if check:do_cor(markovguess.u.cor, true) < perch then
 						counts[2] = counts[2] + 1
 						markovguess:do_uacl()
@@ -1143,11 +1176,11 @@ function mc(delta, margin, size, reps, lowest)
 	local lowest = lowest or 1000
 	
 	local hof = {size=size, scores={}} -- hall of fame
-	local inits = check:get_initguess()--"initdata-TWO3.txt")
-	local cons = check:get_constraints(1,2,2)
+	local inits = check:get_initguess()--"initdata-ONE3.txt")
+	local cons = check:get_constraints(2,2,2)
 	for i=1,hof.size do 
 		hof[i] = markov:around(inits,margin,cons)
-		hof.scores[i] = inits.score and inits.score * (1+9*(i-1)/hof.size) or nil
+		hof.scores[i] = inits.score and inits.score * (1+99*(i-1)/hof.size) or nil
 		hof[i]:do_all()
 	end
 
@@ -1173,14 +1206,14 @@ function mc(delta, margin, size, reps, lowest)
 		--if (top - hof.scores[i])/top < 0.05 then break end
 		top = hof.scores[50] and hof.scores[5] or hof.scores[3] or hof.score[1]
 		margin = margin / 1.3
-		size = size*(1 - 0.8/(count+1))
+		size = size*(1 - 0.6/(count+1))
 		reps = reps + reps/(count+1)
 		count = count + 1
 	end
 	return hof
 end
 
-local hof = mc(2,0.30,1000,1000,100000)
+local hof = mc(2,0.50,10,20000,100)
 
 print(os.date())
 print("\nElapsed total", os.clock() - starttime)
